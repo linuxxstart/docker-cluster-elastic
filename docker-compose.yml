@@ -1,0 +1,118 @@
+version: '3.7'
+
+services:
+  master:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.6.2
+    deploy:
+      endpoint_mode: dnsrr
+      replicas: 2
+    environment:
+      - node.name=elk_master.{{.Task.Slot}}
+      - cluster.name=elastic
+      - node.master=true
+      - node.data=false
+      - discovery.seed_hosts=tasks.master
+      - cluster.initial_master_nodes=elk_master.1,elk_master.2
+      - bootstrap.memory_lock=false
+      - ELASTIC_PASSWORD=Senha123
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+      - xpack.monitoring.collection.enabled=true
+      - xpack.license.self_generated.type=basic
+      - xpack.security.enabled=true
+      - xpack.security.transport.ssl.enabled=true
+      - xpack.security.transport.ssl.verification_mode=certificate
+      - xpack.security.transport.ssl.certificate_authorities=/usr/share/elasticsearch/config/certificates/ca/ca.crt
+      - xpack.security.transport.ssl.certificate=/usr/share/elasticsearch/config/certificates/master/master.crt
+      - xpack.security.transport.ssl.key=/usr/share/elasticsearch/config/certificates/master/master.key
+      - "TZ=America/Sao_Paulo"
+    volumes: ['master:/usr/share/elasticsearch/data','elk_certs:/usr/share/elasticsearch/config/certificates']
+    networks:
+      - elastic
+
+  data:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.6.2
+    deploy:
+      endpoint_mode: dnsrr
+      replicas: 2
+    environment:
+      - node.name=elk_data.{{.Task.Slot}}
+      - cluster.name=elastic
+      - node.master=false
+      - node.data=true
+      - discovery.seed_hosts=tasks.master
+      - cluster.initial_master_nodes=elk_master.1,elk_master.2
+      - bootstrap.memory_lock=false
+      - ELASTIC_PASSWORD=Senha123
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+      - xpack.monitoring.collection.enabled=true
+      - xpack.license.self_generated.type=basic
+      - xpack.security.enabled=true
+      - xpack.security.transport.ssl.enabled=true
+      - xpack.security.transport.ssl.verification_mode=certificate
+      - xpack.security.transport.ssl.certificate_authorities=/usr/share/elasticsearch/config/certificates/ca/ca.crt
+      - xpack.security.transport.ssl.certificate=/usr/share/elasticsearch/config/certificates/data/data.crt
+      - xpack.security.transport.ssl.key=/usr/share/elasticsearch/config/certificates/data/data.key
+      - "TZ=America/Sao_Paulo"
+    volumes: ['data:/usr/share/elasticsearch/data','elk_certs:/usr/share/elasticsearch/config/certificates']
+    networks:
+      - elastic
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:7.6.2
+    environment:
+      - "TZ=America/Sao_Paulo"
+    ports:
+      - 5601:5601
+    volumes:
+      - ./kibana/kibana.yml:/usr/share/kibana/config/kibana.yml
+    networks:
+      - elastic
+
+  logstash:
+    image: docker.elastic.co/logstash/logstash:7.6.2
+    environment:
+      - "LS_JAVA_OPTS=-Xmx1024m -Xms1024m"
+      - "TZ=America/Sao_Paulo"
+    ports:
+      - 5514:5514/tcp
+      - 5514:5514/udp
+    volumes:
+      - ./logstash/config/logstash.yml:/usr/share/logstash/config/logstash.yml
+      - ./logstash/pipeline/:/usr/share/logstash/pipeline/
+    networks:
+      - elastic
+
+
+  haproxy:
+    image: haproxy:latest
+    ports:
+      - 80:80
+      - 443:443
+      - 8443:8443
+      - 9200:9200
+    volumes:
+      - ./haproxy/:/usr/local/etc/haproxy:ro
+    environment:
+      - TZ=America/Sao_Paulo
+    deploy:
+      mode: global
+      placement:
+        constraints: [node.role ==  manager]
+    networks:
+      - elastic
+    dns:
+      - 127.0.0.11
+
+networks:
+  elastic:
+    driver: overlay
+
+volumes:
+  elk_certs:
+    external: true 
+  master:
+    name: '{{.Service.Name}}-{{.Task.Slot}}'
+  data:
+    name: '{{.Service.Name}}-{{.Task.Slot}}'
+  search:
+    name: '{{.Service.Name}}-{{.Task.Slot}}'
